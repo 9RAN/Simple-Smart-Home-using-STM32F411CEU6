@@ -1,0 +1,2 @@
+&Uart1_Tx
+(char*)Uart1_Rx

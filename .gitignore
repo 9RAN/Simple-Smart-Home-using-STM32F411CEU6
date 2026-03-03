@@ -1,0 +1,9 @@
+0302F411/Debug/
+0302F411/.settings/
+*.o
+*.d
+*.su
+*.elf
+*.map
+*.list
+*.hex
