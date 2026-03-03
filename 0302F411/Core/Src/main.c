@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -40,45 +40,22 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 uint8_t KEY_status = 0;
 
-uint8_t TX_OK = 0;
-uint8_t RX_OK = 0;
 
-uint8_t Uart1_Tx;
-uint8_t status;
-char Uart1_Rx[50];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 	KEY_status = 1;
-}
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if(huart->Instance == USART1)
-    {
-        KEY_status = 0;
-    }
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-//    if(huart->Instance == USART1)
-//    {
-//    	HAL_UART_Receive_IT(&huart1, &Uart1_Rx, 50);
-//    }
+	HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 }
 
 
@@ -119,7 +96,6 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -129,64 +105,6 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-	if(KEY_status == 1)
-	{
-		Uart1_Tx = '9';
-
-		status = HAL_UART_Transmit_IT(&huart1, &Uart1_Tx, 1);
-
-		if(status == HAL_OK)
-
-		{
-
-		TX_OK = 1;// 成功接收到 rxData
-
-		}
-
-		else if(status == HAL_TIMEOUT)
-
-		{
-
-		TX_OK = 2;// 沒收到
-
-		}
-
-		else
-
-		{
-
-		TX_OK = 3;// 錯誤處理
-
-		}
-	}
-	else if(KEY_status == 0)
-	{
-		status = HAL_UART_Receive_IT(&huart1, (uint8_t *)Uart1_Rx, 50);
-
-		if(status == HAL_OK)
-
-		{
-
-		RX_OK = 1;// 成功接收到 rxData
-
-		}
-
-		else if(status == HAL_TIMEOUT)
-
-		{
-
-		RX_OK = 2;// 沒收到
-
-		}
-
-		else
-
-		{
-
-		RX_OK = 3;// 錯誤處理
-
-		}
-	}
 
     /* USER CODE BEGIN 3 */
   }
@@ -232,39 +150,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
 }
 
 /**
