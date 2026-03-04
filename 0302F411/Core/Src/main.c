@@ -44,7 +44,6 @@
 /* USER CODE BEGIN PV */
 uint8_t KEY_status = 0;
 
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
