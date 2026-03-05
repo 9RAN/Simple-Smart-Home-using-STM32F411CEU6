@@ -143,6 +143,31 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	if(KEY_status == 1)
+	{
+
+		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
+		sprintf(buffer,
+				"Temperature: %d.%01d %cC, Humidity: %d.%01d %%\r\n",
+				(int)Temperature,
+				(int)(Temperature * 10) % 10,
+				176,
+				(int)Humidity,
+				(int)(Humidity * 10) % 10);
+		KEY_status = 0;
+	}
+
+	if(DHT22_Start())
+	{
+		Rh_byte1 = DHT22_Read ();
+		Rh_byte2 = DHT22_Read ();
+		Temp_byte1 = DHT22_Read ();
+		Temp_byte2 = DHT22_Read ();
+		SUM = DHT22_Read();
+
+		Temperature = (float)((Temp_byte1<<8)|Temp_byte2)/10;
+		Humidity = (float)((Rh_byte1<<8)|Rh_byte2)/10;
+	}
   }
   /* USER CODE END 3 */
 }
