@@ -150,18 +150,12 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-<<<<<<< HEAD
 	/* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
-	if(KEY_status == 1)
-=======
-    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 	//if(KEY_status == 1)
 	if(tim2_s >= 10)
->>>>>>> Bluetooth-UART-practice
 	{
 
 		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
