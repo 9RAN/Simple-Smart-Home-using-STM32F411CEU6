@@ -41,6 +41,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
@@ -50,6 +52,13 @@ UART_HandleTypeDef huart1;
 
 uint8_t DHT22_Start(void);
 uint8_t DHT22_Read(void);
+
+uint8_t I2C1_id;
+
+uint8_t X_byte1 = 0;
+uint8_t X_byte2 = 0;
+uint8_t Y_byte1 = 0;
+uint8_t Y_byte2 = 0;
 
 uint8_t tim2_s = 0;
 
@@ -69,8 +78,21 @@ HAL_StatusTypeDef status;
 
 char buffer[50];
 
+uint8_t ADXL345_data[4];
+
+int16_t ADXL345_X = 0;
+int16_t ADXL345_Y = 0;
+
+uint8_t ADXL345_Dataformat = 0;
+
 float Temperature = 0;
 float Humidity = 0;
+
+float X_g = 0.0f;
+float Y_g = 0.0f;
+
+#define POWER_CTL     0x2D
+#define ADXL345_ADDR  (0x53 << 1) //READ
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,6 +101,7 @@ static void MX_GPIO_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -141,19 +164,42 @@ int main(void)
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_Base_Start_IT(&htim2);
+
+  HAL_I2C_Mem_Read(&hi2c1,
+		  	  	   ADXL345_ADDR,
+                   0x00,
+                   I2C_MEMADD_SIZE_8BIT,
+                   &I2C1_id,
+                   1,
+                   100);
+  uint8_t ADXL345_cmd = 0x08;   // measure bit
+  HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, POWER_CTL, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
+  //set Measure bit to 1, then start measuring
+  HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
+  //set FULL_RES in DATA_FORMAT
+  HAL_I2C_Mem_Read(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_Dataformat, 1, 100);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	/* USER CODE END WHILE */
-
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+	HAL_I2C_Mem_Read(&hi2c1, ADXL345_ADDR, 0x32, I2C_MEMADD_SIZE_8BIT, ADXL345_data, 4, 100);
+	ADXL345_X = (int16_t)((ADXL345_data[1] << 8) | ADXL345_data[0]);
+	ADXL345_Y = (int16_t)((ADXL345_data[3] << 8) | ADXL345_data[2]);
+
+	X_g = ADXL345_X / 256.0;
+	Y_g = ADXL345_Y / 256.0;
+
 	//if(KEY_status == 1)
 	if(tim2_s >= 10)
 	{
@@ -181,6 +227,7 @@ int main(void)
 		Temperature = (float)((Temp_byte1<<8)|Temp_byte2)/10;
 		Humidity = (float)((Rh_byte1<<8)|Rh_byte2)/10;
 	}
+	microDelay(1000);
   }
   /* USER CODE END 3 */
 }
@@ -229,6 +276,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -370,6 +451,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
