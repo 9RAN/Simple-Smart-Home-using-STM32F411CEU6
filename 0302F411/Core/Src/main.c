@@ -18,11 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -138,6 +138,8 @@ int main(void)
   while (1)
   {
 	/* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
 	if(KEY_status == 1)
 	{
 
@@ -163,7 +165,6 @@ int main(void)
 		Temperature = (float)((Temp_byte1<<8)|Temp_byte2)/10;
 		Humidity = (float)((Rh_byte1<<8)|Rh_byte2)/10;
 	}
-    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
