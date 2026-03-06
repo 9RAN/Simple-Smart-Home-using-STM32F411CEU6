@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,7 +38,19 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+typedef enum
+{
+    STATE_STANDBY = 0,
 
+    STATE_ENV_INIT,
+    STATE_ENV_RUN,
+    STATE_ENV_DEINIT,
+
+    STATE_GFORCE_INIT,
+    STATE_GFORCE_RUN,
+    STATE_GFORCE_DEINIT
+
+} system_state_t;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -49,6 +62,16 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+
+system_state_t current_state = STATE_STANDBY;
+
+#define EVENT_ENV_START   (1 << 0) // 0000 0001
+#define EVENT_ENV_STOP    (1 << 1) // 0000 0010
+#define EVENT_GFORCE_START     (1 << 2) // 0000 0100
+#define EVENT_GFORCE_STOP      (1 << 3) // 0000 1000
+
+uint8_t event_flags = 0;
+
 
 uint8_t DHT22_Start(void);
 uint8_t DHT22_Read(void);
@@ -106,6 +129,156 @@ static void MX_TIM2_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
+//========= STATE MACHINE ====================================
+
+void state_standby(void)
+{
+	if(tim2_s >= 2)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		tim2_s = 0;
+	}
+
+	if(event_flags & EVENT_ENV_START)
+	{
+		current_state = STATE_ENV_INIT;
+		event_flags &= ~EVENT_ENV_START;
+	}
+	else if(event_flags & EVENT_GFORCE_START)
+	{
+		current_state = STATE_GFORCE_INIT;
+		event_flags &= ~EVENT_GFORCE_START;
+	}
+}
+
+
+void state_env_init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+	/*Configure GPIO pin : PB9 */
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	current_state = STATE_ENV_RUN;
+}
+
+void state_env_run(void)
+{
+
+	if(DHT22_Start())
+	{
+		Rh_byte1 = DHT22_Read ();
+		Rh_byte2 = DHT22_Read ();
+		Temp_byte1 = DHT22_Read ();
+		Temp_byte2 = DHT22_Read ();
+		SUM = DHT22_Read();
+
+		Temperature = (float)((Temp_byte1<<8)|Temp_byte2)/10;
+		Humidity = (float)((Rh_byte1<<8)|Rh_byte2)/10;
+	}
+
+	//if(KEY_status == 1)
+	if(tim2_s >= 10)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
+		sprintf(buffer,
+				"Temperature: %d.%01d *C, Humidity: %d.%01d %%\r\n",
+				(int)Temperature,
+				(int)(Temperature * 10) % 10,
+				(int)Humidity,
+				(int)(Humidity * 10) % 10);
+		//KEY_status = 0;
+
+		HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
+		tim2_s = 0;
+	}
+
+	if(event_flags & EVENT_ENV_STOP)
+	{
+		current_state = STATE_ENV_DEINIT;
+		event_flags &= ~EVENT_ENV_STOP;
+	}
+
+}
+
+void state_env_deinit(void)
+{
+
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_9);
+
+	current_state = STATE_STANDBY;
+}
+
+void state_gforce_init(void)
+{
+	MX_I2C1_Init();
+	HAL_I2C_Mem_Read(&hi2c1,
+				   ADXL345_ADDR,
+				   0x00,
+				   I2C_MEMADD_SIZE_8BIT,
+				   &I2C1_id,
+				   1,
+				   100);
+	uint8_t ADXL345_cmd = 0x08;   // measure bit
+	HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, POWER_CTL, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
+	//set Measure bit to 1, then start measuring
+	HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
+	//set FULL_RES in DATA_FORMAT
+
+	current_state = STATE_GFORCE_RUN;
+}
+
+void state_gforce_run(void)
+{
+	HAL_I2C_Mem_Read(&hi2c1, ADXL345_ADDR, 0x32, I2C_MEMADD_SIZE_8BIT, ADXL345_data, 4, 100);
+	ADXL345_X = (int16_t)((ADXL345_data[1] << 8) | ADXL345_data[0]);
+	ADXL345_Y = (int16_t)((ADXL345_data[3] << 8) | ADXL345_data[2]);
+
+	X_g = ADXL345_X / 256.0;
+	Y_g = ADXL345_Y / 256.0;
+
+	if(tim2_s >= 1)
+	{
+		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
+		sprintf(buffer,
+				"X_g: %d.%02d G, Y_g: %d.%02d %%\r\n",
+				(int)X_g,
+				(int)(X_g * 100) % 100,
+				(int)Y_g,
+				(int)(Y_g * 100) % 100);
+		//KEY_status = 0;
+
+		HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
+		tim2_s = 0;
+	}
+
+	if(event_flags & EVENT_GFORCE_STOP)
+	{
+		current_state = STATE_GFORCE_DEINIT;
+		event_flags &= ~EVENT_GFORCE_STOP;
+	}
+}
+
+void state_gforce_deinit(void)
+{
+	uint8_t ADXL345_cmd = 0x00;   // measure bit
+	HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, POWER_CTL, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
+	//set Measure bit to 0, then stop measuring
+    HAL_I2C_DeInit(&hi2c1);
+
+    current_state = STATE_STANDBY;
+}
+
+//================================================
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	KEY_status = 1;
@@ -131,26 +304,43 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if(huart->Instance == USART1)
 	{
-
-
 		switch(rx_data)
 		{
-		case 'x'://Just press 'X'
-			sprintf(buffer_Return, "X_g: %d.%02d G\r\n",
-			                        (int)X_g,
-									(int)(X_g > 0 ? (X_g*100) : (-X_g*100)) % 100);
-			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+		case 'e'://Just press 'E'
+			event_flags |= EVENT_ENV_START;
 			break;
-		case 'y'://Just press 'Y'
-			sprintf(buffer_Return, "Y_g: %d.%02d G\r\n",
-			                        (int)Y_g,
-									(int)(Y_g > 0 ? (Y_g*100) : (-Y_g*100)) % 100);
-			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+		case 'g'://Just press 'G'
+			event_flags |= EVENT_GFORCE_START;
+			break;
+		case 'q'://Just press 'Q'
+			if(current_state == STATE_ENV_RUN)
+				event_flags |= EVENT_ENV_STOP;
+			else if(current_state == STATE_GFORCE_RUN)
+				event_flags |= EVENT_GFORCE_STOP;
 			break;
 		default:
 			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
 			break;
 		}
+
+//		switch(rx_data)
+//		{
+//		case 'x'://Just press 'X'
+//			sprintf(buffer_Return, "X_g: %d.%02d G\r\n",
+//			                        (int)X_g,
+//									(int)(X_g > 0 ? (X_g*100) : (-X_g*100)) % 100);
+//			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+//			break;
+//		case 'y'://Just press 'Y'
+//			sprintf(buffer_Return, "Y_g: %d.%02d G\r\n",
+//			                        (int)Y_g,
+//									(int)(Y_g > 0 ? (Y_g*100) : (-Y_g*100)) % 100);
+//			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+//			break;
+//		default:
+//			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
+//			break;
+//		}
 
 		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 	}
@@ -195,26 +385,12 @@ int main(void)
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
-  MX_I2C1_Init();
+
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_Base_Start_IT(&htim2);
 
   HAL_UART_Receive_IT(&huart1, &rx_data, 1);
-
-  HAL_I2C_Mem_Read(&hi2c1,
-		  	  	   ADXL345_ADDR,
-                   0x00,
-                   I2C_MEMADD_SIZE_8BIT,
-                   &I2C1_id,
-                   1,
-                   100);
-  uint8_t ADXL345_cmd = 0x08;   // measure bit
-  HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, POWER_CTL, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
-  //set Measure bit to 1, then start measuring
-  HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
-  //set FULL_RES in DATA_FORMAT
-  HAL_I2C_Mem_Read(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_Dataformat, 1, 100);
 
   /* USER CODE END 2 */
 
@@ -225,44 +401,43 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-	HAL_I2C_Mem_Read(&hi2c1, ADXL345_ADDR, 0x32, I2C_MEMADD_SIZE_8BIT, ADXL345_data, 4, 100);
-	ADXL345_X = (int16_t)((ADXL345_data[1] << 8) | ADXL345_data[0]);
-	ADXL345_Y = (int16_t)((ADXL345_data[3] << 8) | ADXL345_data[2]);
-
-	X_g = ADXL345_X / 256.0;
-	Y_g = ADXL345_Y / 256.0;
-
-	//if(KEY_status == 1)
-	if(tim2_s >= 10)
+	switch(current_state)
 	{
+		case STATE_STANDBY:
+			state_standby();
+			break;
 
-		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
-		sprintf(buffer,
-				"Temperature: %d.%01d *C, Humidity: %d.%01d %%\r\n",
-				(int)Temperature,
-				(int)(Temperature * 10) % 10,
-				(int)Humidity,
-				(int)(Humidity * 10) % 10);
-		//KEY_status = 0;
+		// ENV Mode
+		case STATE_ENV_INIT:
+			state_env_init();
+			break;
 
-		HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+		case STATE_ENV_RUN:
+			state_env_run();
+			break;
 
+		case STATE_ENV_DEINIT:
+			state_env_deinit();
+			break;
 
-		tim2_s = 0;
+		// GForce Mode
+		case STATE_GFORCE_INIT:
+			state_gforce_init();
+			break;
+
+		case STATE_GFORCE_RUN:
+			state_gforce_run();
+			break;
+
+		case STATE_GFORCE_DEINIT:
+			state_gforce_deinit();
+			break;
+
+		default:
+			current_state = STATE_STANDBY;
+			break;
 	}
 
-	if(DHT22_Start())
-	{
-		Rh_byte1 = DHT22_Read ();
-		Rh_byte2 = DHT22_Read ();
-		Temp_byte1 = DHT22_Read ();
-		Temp_byte2 = DHT22_Read ();
-		SUM = DHT22_Read();
-
-		Temperature = (float)((Temp_byte1<<8)|Temp_byte2)/10;
-		Humidity = (float)((Rh_byte1<<8)|Rh_byte2)/10;
-	}
 	microDelay(1000);
   }
   /* USER CODE END 3 */
@@ -517,14 +692,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 uint8_t DHT22_Start (void)
 {
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
 	uint8_t Response = 0;
-	/*Configure GPIO pin : PC10 */
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	GPIO_InitTypeDef GPIO_InitStruct = {0};
 
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_RESET);
 	microDelay(1200);
