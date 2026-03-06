@@ -167,6 +167,11 @@ int main(void)
 				(int)Humidity,
 				(int)(Humidity * 10) % 10);
 		//KEY_status = 0;
+		if(HAL_UART_GetState(&huart1) == HAL_UART_STATE_READY)
+		{
+		    HAL_UART_Transmit_IT(&huart1, (uint8_t*)buffer, strlen(buffer));
+		}
+
 		tim2_s = 0;
 	}
 
