@@ -160,10 +160,9 @@ int main(void)
 
 		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
 		sprintf(buffer,
-				"Temperature: %d.%01d %cC, Humidity: %d.%01d %%\r\n",
+				"Temperature: %d.%01d *C, Humidity: %d.%01d %%\r\n",
 				(int)Temperature,
 				(int)(Temperature * 10) % 10,
-				176,
 				(int)Humidity,
 				(int)(Humidity * 10) % 10);
 		//KEY_status = 0;
