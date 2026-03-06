@@ -77,6 +77,8 @@ uint32_t pMillis, cMillis;
 HAL_StatusTypeDef status;
 
 char buffer[50];
+char buffer_Return[50];
+uint8_t rx_data;//一個字元
 
 uint8_t ADXL345_data[4];
 
@@ -125,6 +127,35 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(huart->Instance == USART1)
+	{
+
+
+		switch(rx_data)
+		{
+		case 'x'://Just press 'X'
+			sprintf(buffer_Return, "X_g: %d.%02d G\r\n",
+			                        (int)X_g,
+									(int)(X_g > 0 ? (X_g*100) : (-X_g*100)) % 100);
+			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+			break;
+		case 'y'://Just press 'Y'
+			sprintf(buffer_Return, "Y_g: %d.%02d G\r\n",
+			                        (int)Y_g,
+									(int)(Y_g > 0 ? (Y_g*100) : (-Y_g*100)) % 100);
+			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
+			break;
+		default:
+			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
+			break;
+		}
+
+		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+	}
+}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -169,6 +200,8 @@ int main(void)
   HAL_TIM_Base_Start(&htim1);
   HAL_TIM_Base_Start_IT(&htim2);
 
+  HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+
   HAL_I2C_Mem_Read(&hi2c1,
 		  	  	   ADXL345_ADDR,
                    0x00,
@@ -212,10 +245,9 @@ int main(void)
 				(int)Humidity,
 				(int)(Humidity * 10) % 10);
 		//KEY_status = 0;
-		if(HAL_UART_GetState(&huart1) == HAL_UART_STATE_READY)
-		{
-		    HAL_UART_Transmit_IT(&huart1, (uint8_t*)buffer, strlen(buffer));
-		}
+
+		HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
 
 		tim2_s = 0;
 	}
