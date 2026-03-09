@@ -321,6 +321,8 @@ void state_gforce_deinit(void)
     current_state = STATE_STANDBY;
 }
 
+
+
 //================================================
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -335,6 +337,95 @@ void microDelay(uint32_t t){
 	while(__HAL_TIM_GET_COUNTER(&htim1) < t){
 	}
 }
+
+// 發射 IR 波形 (GPIO Set/Reset)
+void send_ir_waveform_OPEN(void) {
+    // high/low 陣列，單位 µs
+    uint32_t low_times[]  = {630, 498, 498, 498, 498, 498, 498, 498, 498, 621, 501, 618, 518,
+                             501, 474, 474, 474, 474, 474, 474, 474, 474, 474, 474, 474,
+                             474, 474, 474, 498, 498, 498, 498, 531, 531, 556, 474, 556, 474,
+                             556, 474, 556, 474, 531, 498, 531, 498, 556, 474, 556, 474, 531, 498,
+                             474, 474, 474, 498, 498, 498, 499, 525, 499, 500, 500, 606, 526};
+
+    uint32_t high_times[] = {3413, 531, 531, 531, 531, 531, 531, 531, 1564, 1540, 511, 411, 530,
+                             556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556,
+                             556, 556, 556, 531, 532, 532, 532, 531, 531, 556, 556, 556, 556,
+                             556, 556, 556, 556, 531, 531, 556, 556, 531, 531, 556, 556, 531, 531,
+                             1564, 1563, 1562, 1561, 3413, 532};
+
+    uint32_t length_low  = sizeof(low_times) / sizeof(low_times[0]);
+    uint32_t length_high = sizeof(high_times) / sizeof(high_times[0]);
+
+    uint32_t length = (length_low < length_high) ? length_low : length_high;
+
+    for(uint32_t i = 0; i < length; i++) {
+        // low 脈衝，GPIO 低
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+        microDelay(low_times[i]);
+
+        // high 脈衝，GPIO 高
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+        microDelay(high_times[i]);
+    }
+
+    // 發射結束，恢復待機 high
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+}
+
+void send_ir_waveform_CLOSE(void) {
+    // low/high 時間陣列，單位 µs
+    uint32_t low_times[]  = {
+        650, 542, 605, 542,
+        601, 629, 584, 564, 483, 483, 483, 483,
+        504, 482, 482, 482,
+        504, 482, 482, 482,
+        499, 517, 517, 517, 517, 517,
+        480, 517, 480, 581,
+        480, 516, 516,
+        570, 516, 480,
+        516, 516, 516, 479, 514,
+        516, 513, 513, 513, 476,
+        513, 475,
+        513, 475,
+        475, 512, 509,
+        580, 598
+    };
+
+    uint32_t high_times[] = {
+        3372, 525, 390, 527,
+        393, 437, 469, 466, 548, 548, 548, 528,
+        549, 549, 549, 527,
+        549, 549, 549, 531,
+        513, 514, 514, 514, 514, 551,
+        551, 514, 551, 551,
+        450, 515, 515,
+        551, 424, 551,
+        515, 515, 552, 516, 515,
+        1549, 515, 516, 517, 556,
+        1550, 556,
+        1550, 556,
+        1590, 1550, 523,
+        1590, 3440
+    };
+
+    uint32_t length_low  = sizeof(low_times) / sizeof(low_times[0]);
+    uint32_t length_high = sizeof(high_times) / sizeof(high_times[0]);
+    uint32_t length = (length_low < length_high) ? length_low : length_high;
+
+    for(uint32_t i = 0; i < length; i++) {
+        // LOW 脈衝
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+        microDelay(low_times[i]);
+
+        // HIGH 脈衝
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+        microDelay(high_times[i]);
+    }
+
+    // 發射結束，恢復 HIGH
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+}
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -372,6 +463,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			else if(current_state == STATE_GFORCE_RUN)
 				event_flags |= EVENT_GFORCE_STOP;
 			break;
+
+		case 'i'://Just press 'I'
+			HAL_UART_Transmit(&huart1, (uint8_t*)"IR_OPEN!!!!!!!!!!\r\n", 19, 100);
+			send_ir_waveform_OPEN();
+			break;
+
+		case 'p'://Just press 'P'
+			HAL_UART_Transmit(&huart1, (uint8_t*)"IR_CLOSE!!!!!!!!!!\r\n", 20, 100);
+			send_ir_waveform_CLOSE();
+			break;
+
 		default:
 			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
 			break;
@@ -380,6 +482,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 	}
 }
+
+
 
 /* USER CODE END PFP */
 
@@ -722,6 +826,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
