@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,7 +73,6 @@ system_state_t current_state = STATE_STANDBY;
 
 uint8_t event_flags = 0;
 
-
 uint8_t DHT22_Start(void);
 uint8_t DHT22_Read(void);
 
@@ -99,8 +99,8 @@ uint32_t pMillis, cMillis;
 
 HAL_StatusTypeDef status;
 
-char buffer[50];
-char buffer_Return[50];
+char buffer[300];
+
 uint8_t rx_data;//一個字元
 
 uint8_t ADXL345_data[4];
@@ -154,14 +154,17 @@ void state_standby(void)
 
 void state_env_init(void)
 {
-	GPIO_InitTypeDef GPIO_InitStruct = {0};
+	sprintf(buffer,
+			"Current State: Single-bus Communication Init (Env Init) \r\n");
 
-	/*Configure GPIO pin : PB9 */
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
+	sprintf(buffer,
+			"Current State: Environmental Monitoring Mode (Press 'Q' to exit.)\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
+	tim2_s = 8;
 
 	current_state = STATE_ENV_RUN;
 }
@@ -209,14 +212,30 @@ void state_env_run(void)
 
 void state_env_deinit(void)
 {
+	sprintf(buffer,
+			"Current State: Single-bus Communication DeInit (Env DeInit)\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
 
 	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_9);
+
+	sprintf(buffer,
+			"Current State: Standby Mode\r\n"
+			"Press 'E' for Environmental Monitoring Mode\r\n"
+            "Press 'G' for G-Force Measuring Mode\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 300);
 
 	current_state = STATE_STANDBY;
 }
 
 void state_gforce_init(void)
 {
+	sprintf(buffer,
+			"Current State: I2C Init (G-Force Init)\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
 	MX_I2C1_Init();
 	HAL_I2C_Mem_Read(&hi2c1,
 				   ADXL345_ADDR,
@@ -231,6 +250,11 @@ void state_gforce_init(void)
 	HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, 0x31, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
 	//set FULL_RES in DATA_FORMAT
 
+	sprintf(buffer,
+			"Current State: G-Force Measuring Mode (Press 'Q' to exit.)\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
 	current_state = STATE_GFORCE_RUN;
 }
 
@@ -243,16 +267,24 @@ void state_gforce_run(void)
 	X_g = ADXL345_X / 256.0;
 	Y_g = ADXL345_Y / 256.0;
 
+	// 處理 X
+	int X_sign = (X_g < 0) ? -1 : 1;
+	int X_int = (int)(fabs(X_g));               // 取絕對值整數部分
+	int X_frac = (int)(fabs(X_g) * 100) % 100; // 小數部分
+
+	// 處理 Y
+	int Y_sign = (Y_g < 0) ? -1 : 1;
+	int Y_int = (int)(fabs(Y_g));
+	int Y_frac = (int)(fabs(Y_g) * 100) % 100;
+
 	if(tim2_s >= 1)
 	{
 		HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 		//sprintf(charData,"Temperature: %d C, Humidity: %d %%\r\n", (int)Temperature, (int)Humidity);
 		sprintf(buffer,
-				"X_g: %d.%02d G, Y_g: %d.%02d %%\r\n",
-				(int)X_g,
-				(int)(X_g * 100) % 100,
-				(int)Y_g,
-				(int)(Y_g * 100) % 100);
+		        "X_g: %c%d.%02d G, Y_g: %c%d.%02d G\r\n",
+		        (X_sign < 0) ? '-' : '+', X_int, X_frac,
+		        (Y_sign < 0) ? '-' : '+', Y_int, Y_frac);
 		//KEY_status = 0;
 
 		HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
@@ -269,10 +301,22 @@ void state_gforce_run(void)
 
 void state_gforce_deinit(void)
 {
+	sprintf(buffer,
+			"Current State: I2C DeInit (G-Force DeInit)\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 100);
+
 	uint8_t ADXL345_cmd = 0x00;   // measure bit
 	HAL_I2C_Mem_Write(&hi2c1, ADXL345_ADDR, POWER_CTL, I2C_MEMADD_SIZE_8BIT, &ADXL345_cmd, 1, 100);
 	//set Measure bit to 0, then stop measuring
     HAL_I2C_DeInit(&hi2c1);
+
+	sprintf(buffer,
+			"Current State: Standby Mode\r\n"
+			"Press 'E' for Environmental Monitoring Mode\r\n"
+            "Press 'G' for G-Force Measuring Mode\r\n");
+
+	HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 300);
 
     current_state = STATE_STANDBY;
 }
@@ -307,10 +351,20 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		switch(rx_data)
 		{
 		case 'e'://Just press 'E'
-			event_flags |= EVENT_ENV_START;
+			if(current_state == STATE_STANDBY)
+				event_flags |= EVENT_ENV_START;
+			else
+			{
+				HAL_UART_Transmit(&huart1, (uint8_t*)"Please return to Standby Mode first\r\n", 37, 100);
+			}
 			break;
 		case 'g'://Just press 'G'
-			event_flags |= EVENT_GFORCE_START;
+			if(current_state == STATE_STANDBY)
+				event_flags |= EVENT_GFORCE_START;
+			else
+			{
+				HAL_UART_Transmit(&huart1, (uint8_t*)"Please return to Standby Mode first\r\n", 37, 100);
+			}
 			break;
 		case 'q'://Just press 'Q'
 			if(current_state == STATE_ENV_RUN)
@@ -322,25 +376,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
 			break;
 		}
-
-//		switch(rx_data)
-//		{
-//		case 'x'://Just press 'X'
-//			sprintf(buffer_Return, "X_g: %d.%02d G\r\n",
-//			                        (int)X_g,
-//									(int)(X_g > 0 ? (X_g*100) : (-X_g*100)) % 100);
-//			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
-//			break;
-//		case 'y'://Just press 'Y'
-//			sprintf(buffer_Return, "Y_g: %d.%02d G\r\n",
-//			                        (int)Y_g,
-//									(int)(Y_g > 0 ? (Y_g*100) : (-Y_g*100)) % 100);
-//			HAL_UART_Transmit(&huart1, (uint8_t*)buffer_Return, strlen(buffer_Return), 100);
-//			break;
-//		default:
-//			HAL_UART_Transmit(&huart1, (uint8_t*)"Unknown Command\r\n", 17, 100);
-//			break;
-//		}
 
 		HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 	}
@@ -392,6 +427,14 @@ int main(void)
 
   HAL_UART_Receive_IT(&huart1, &rx_data, 1);
 
+  sprintf(buffer,
+		"Current State: Standby Mode\r\n"
+		"Press 'E' for Environmental Monitoring Mode\r\n"
+		"Press 'G' for G-Force Measuring Mode\r\n");
+
+  HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), 300);
+  //timeout從100改300，因為傳的字多，baud rate又低，速度不夠
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -420,7 +463,7 @@ int main(void)
 			state_env_deinit();
 			break;
 
-		// GForce Mode
+		// G-Force Mode
 		case STATE_GFORCE_INIT:
 			state_gforce_init();
 			break;
@@ -694,6 +737,13 @@ uint8_t DHT22_Start (void)
 {
 	uint8_t Response = 0;
 	GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+	/*Configure GPIO pin : PB9 */
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_9, GPIO_PIN_RESET);
 	microDelay(1200);
